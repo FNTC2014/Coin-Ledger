@@ -37,7 +37,11 @@ const SERVICES = ["Economy","Regular","Express","Walkthrough","Reconsideration",
 const EXP_CATS = ["Grading memberships","Supplies & holders","Shipping supplies","Show & table fees","Selling platform fees","Postage","Travel","Software & subscriptions","Reference books","Other"];
 const TABS = [["overview","Overview"],["inventory","Inventory"],["grading","Grading"],["sales","Sales"],["expenses","Expenses"],["money","Money"]];
 const PERIODS = [["month","This month"],["lastmonth","Last month"],["year","This year"],["lastyear","Last year"],["all","All time"]];
-const FILTERS = [["active","Active"],["incoming","Awaiting"],["stock","In stock"],["grading","At grading"],["consigned","Consigned"],["sold","Sold"],["all","All"]];
+const FILTERS = [["active","Active"],["incoming","Awaiting"],["stock","In stock"],["listed","Listed"],["grading","At grading"],["consigned","Consigned"],["sold","Sold"],["all","All"]];
+// An in-stock coin can be listed for sale somewhere (Facebook by default) and stays in stock until it sells.
+const PLATFORMS = ["Facebook","Facebook auction","eBay","Kijiji","Coin show table","Website"];
+const isListed = c => c.status === "stock" && !!c.listed;
+const listPill = c => `<span class="pill list">Listed${c.listedOn ? " \u00b7 " + esc(c.listedOn) : ""}</span>`;
 const HOUSES = ["TCNC","Geoffrey Bell Auctions","Heritage Auctions","Stack's Bowers","Torex"];
 const ACCTS = [["cash","Cash"],["eq","EQ Bank"]];
 const ACCT_NAME = {cash:"Cash", eq:"EQ Bank", other:"Card or other"};
@@ -226,7 +230,8 @@ function overview(){
   const s = stats(state.period);
   const bl = balances(), funds = num(bl.cash.bal + bl.eq.bal), anyMoney = state.accounts.size || bl.cash.rows.length || bl.eq.rows.length;
   const margin = s.revenue > 0 ? Math.round(s.gross / s.revenue * 1000) / 10 : null;
-  const tile = k => `<button class="tile" data-act="goto-inv" data-f="${k}"><span class="tile-lab"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}</span><span class="tile-n">${p[k].n}</span><span class="fig">${fmt(p[k].v)}</span></button>`;
+  const nListed = [...state.coins.values()].filter(isListed).length;
+  const tile = k => `<button class="tile" data-act="goto-inv" data-f="${k}"><span class="tile-lab"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}</span><span class="tile-n">${p[k].n}</span><span class="fig">${fmt(p[k].v)}</span>${k === "stock" && nListed ? `<span class="tile-sub">${nListed} listed for sale</span>` : ""}</button>`;
 
   const months = monthly();
   const anySales = months.some(x => x.n > 0);
@@ -317,8 +322,8 @@ function monthly(){
 
 function invItems(){
   const q = state.invQuery.trim().toLowerCase(), f = state.invFilter;
-  let arr = [...state.coins.entries()].filter(([, c]) => f === "all" ? true : f === "active" ? c.status !== "sold" : c.status === f);
-  if (q) arr = arr.filter(([, c]) => [c.name, c.grade, c.grader, c.cert, c.variety, c.comments, c.source, c.notes, c.soldVia, c.buyer].join(" ").toLowerCase().includes(q));
+  let arr = [...state.coins.entries()].filter(([, c]) => f === "all" ? true : f === "active" ? c.status !== "sold" : f === "listed" ? isListed(c) : c.status === f);
+  if (q) arr = arr.filter(([, c]) => [c.name, c.grade, c.grader, c.cert, c.variety, c.comments, c.source, c.notes, c.soldVia, c.buyer, c.listed ? "listed " + (c.listedOn || "") : ""].join(" ").toLowerCase().includes(q));
   const key = c => c.status === "sold" ? (c.soldOn || "") : (c.boughtOn || "");
   arr.sort((a, b) => key(b[1]).localeCompare(key(a[1])) || String(a[1].name).localeCompare(String(b[1].name)));
   return arr;
@@ -327,6 +332,7 @@ function coinRow(id, c){
   const sub = [gradeLine(c), c.variety, c.comments, c.cert ? "#" + c.cert : "", c.status === "sold" ? "sold " + fmtShort(c.soldOn) + (c.buyer ? " to " + c.buyer : "") : (c.boughtOn ? "bought " + fmtShort(c.boughtOn) : "")].filter(Boolean).map(esc).join(" · ");
   let side;
   if (c.status === "sold"){ const pr = profit(c); side = `${isUnpaid(c) ? '<span class="pill in">Payment due</span>' : pill("sold")}<span class="fig">${fmt(c.salePrice)}</span><span class="fig sm ${pr < 0 ? "neg" : "pos"}">${fmtSigned(pr)}</span>`; }
+  else if (isListed(c)) side = `${listPill(c)}<span class="fig">${fmt(basis(c))}</span>${c.askPrice ? `<span class="fig sm muted">asking ${fmt(c.askPrice)}</span>` : ""}`;
   else side = `${pill(c.status)}<span class="fig">${fmt(basis(c))}</span>`;
   return `<button class="row" data-act="edit-coin" data-id="${esc(id)}"><span class="row-main"><span class="row-title">${esc(c.name || "Untitled coin")}${exTag(c)}</span><span class="row-sub">${sub}</span></span><span class="row-side">${side}</span></button>`;
 }
@@ -342,12 +348,12 @@ function invListHTML(){
   return `<div class="sumline">${line}</div><div class="list">${arr.map(([id, c]) => coinRow(id, c)).join("")}</div>`;
 }
 function inventory(){
-  const counts = {active:0, all:state.coins.size, incoming:0, stock:0, grading:0, consigned:0, sold:0};
-  for (const c of state.coins.values()){ if (counts[c.status] != null) counts[c.status]++; if (c.status !== "sold") counts.active++; }
+  const counts = {active:0, all:state.coins.size, incoming:0, stock:0, listed:0, grading:0, consigned:0, sold:0};
+  for (const c of state.coins.values()){ if (counts[c.status] != null) counts[c.status]++; if (c.status !== "sold") counts.active++; if (isListed(c)) counts.listed++; }
   return `
   <div class="vhead"><div><h2>Inventory</h2><p class="muted">Every coin you've paid for, from purchase through grading to sale.</p></div><div class="btnrow">${scanBtn()}<button class="btn" data-act="consign">Consign coins</button><button class="btn primary" data-act="new-coin">Add coin</button></div></div>
   <div class="block">
-    <div class="toolbar"><input class="search" id="inv-q" type="search" placeholder="Search coin, grade, cert #, seller" value="${esc(state.invQuery)}" aria-label="Search inventory" autocomplete="off"></div>
+    <div class="toolbar"><input class="search" id="inv-q" type="search" placeholder="Search coin, grade, cert #, seller" value="${esc(state.invQuery)}" aria-label="Search inventory" autocomplete="off"><button class="btn" data-act="list-coins">Mark listed</button></div>
     <div class="seg" role="group" aria-label="Filter">${FILTERS.map(([k, l]) => `<button class="seg-b" data-act="inv-filter" data-f="${k}" aria-pressed="${state.invFilter === k}">${l} <span class="fig sm">${counts[k]}</span></button>`).join("")}</div>
     <div id="inv-list" class="block">${invListHTML()}</div>
     ${state.dl && state.coins.size ? `<div class="btnrow"><button class="btn" data-act="export-coins">Export inventory (CSV)</button><button class="btn" data-act="export-all">Back up everything</button></div>` : ""}
@@ -537,10 +543,10 @@ async function exportAll(){
   catch(e){ if (!e || e.code !== "declined") toast("The backup didn't save. Try again."); }
 }
 function exportCoins(){
-  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
+  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Listed on","Asking price","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
   const arr = [...state.coins.values()].sort((a, b) => (a.boughtOn || "").localeCompare(b.boughtOn || ""));
   for (const c of arr){ const s = c.status === "sold";
-    rows.push([c.name, c.grader, c.grade, c.cert, c.variety || "", c.comments || "", (STATUS[c.status] || {}).label || c.status, c.status === "consigned" ? (c.consignee || "") : "", c.boughtOn, c.source, m2(c.cost), m2(c.buyFees), m2(c.gradeCost), m2(basis(c)), s ? c.soldOn : "", s ? c.soldVia : "", s ? c.buyer || "" : "", s ? (c.paid === false ? "Not paid" : (c.paidOn || c.soldOn)) : "", s ? m2(c.salePrice) : "", s ? m2(c.saleFees) : "", s ? m2(c.shipCost) : "", s ? m2(netSale(c)) : "", s ? m2(profit(c)) : "", c.notes]); }
+    rows.push([c.name, c.grader, c.grade, c.cert, c.variety || "", c.comments || "", (STATUS[c.status] || {}).label || c.status, isListed(c) ? (c.listedOn || "Listed") : "", isListed(c) && c.askPrice ? m2(c.askPrice) : "", c.status === "consigned" ? (c.consignee || "") : "", c.boughtOn, c.source, m2(c.cost), m2(c.buyFees), m2(c.gradeCost), m2(basis(c)), s ? c.soldOn : "", s ? c.soldVia : "", s ? c.buyer || "" : "", s ? (c.paid === false ? "Not paid" : (c.paidOn || c.soldOn)) : "", s ? m2(c.salePrice) : "", s ? m2(c.saleFees) : "", s ? m2(c.shipCost) : "", s ? m2(netSale(c)) : "", s ? m2(profit(c)) : "", c.notes]); }
   offer(`coin-inventory-${todayStr()}.csv`, rows);
 }
 function exportSales(){
@@ -619,6 +625,15 @@ function openCoin(id, preset){
         </div>
         <div class="field"><label for="f-comments">Comments on the cert</label><input id="f-comments" value="${esc(c.comments)}" placeholder="e.g. Cleaned, Full Red, Prooflike" autocomplete="off"></div>
         <div class="field"><span class="lab" id="st-lab">Status</span><div class="status-pick" role="radiogroup" aria-labelledby="st-lab">${Object.entries(STATUS).map(([k, s]) => `<label class="sp ${s.cls}"><input type="radio" name="status" id="f-st-${k}" value="${k}"${c.status === k ? " checked" : ""}><span>${s.label}</span></label>`).join("")}</div></div>
+        <div class="listbox" id="list-sec"${c.status === "stock" ? "" : " hidden"}>
+          <label class="inc"><input type="checkbox" id="f-listed"${c.listed ? " checked" : ""}><span>Listed for sale</span></label>
+          <div class="grid3" id="list-fields"${c.listed ? "" : " hidden"}>
+            <div class="field"><label for="f-listedon">Where</label><input id="f-listedon" list="dl-platforms" value="${esc(c.listedOn || "Facebook")}" autocomplete="off"></div>
+            <div class="field"><label for="f-listeddate">Date listed</label><input id="f-listeddate" type="date" value="${esc(c.listedDate || "")}"></div>
+            <div class="field"><label for="f-ask">Asking price</label><input id="f-ask" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="0.00"></div>
+          </div>
+          ${dl("dl-platforms", PLATFORMS.concat([...state.coins.values()].map(x => x.listedOn)))}
+        </div>
       </section>
       <section class="sec">
         <h3 class="eyebrow">Purchase</h3>
@@ -724,8 +739,20 @@ function openCoin(id, preset){
         const po = panel.querySelector("#f-paidon"); if (yes && !po.value && src && src.paid === false) po.value = todayStr();
         return;
       }
+      if (e.target.id === "f-listed"){
+        panel.querySelector("#list-fields").hidden = !e.target.checked;
+        const ld = panel.querySelector("#f-listeddate"); if (e.target.checked && !ld.value) ld.value = todayStr();
+        return;
+      }
       if (e.target.name === "status"){
         const sold = e.target.value === "sold", con = e.target.value === "consigned", f = panel.querySelector("#coin-form");
+        panel.querySelector("#list-sec").hidden = e.target.value !== "stock";
+        // selling a listed coin: it sold where it was listed, at the asking price unless you change it
+        if (sold && src && isListed(src)){
+          const via = f.querySelector("#f-soldvia"), sp = f.querySelector("#f-saleprice");
+          if (!via.value && src.listedOn) via.value = src.listedOn;
+          if (!sp.value && src.askPrice) sp.value = src.askPrice;
+        }
         panel.querySelector("#sale-sec").hidden = !sold;
         panel.querySelector("#con-sec").hidden = !con;
         const so = panel.querySelector("#f-soldon"); if (sold && !so.value) so.value = todayStr();
@@ -754,6 +781,7 @@ function openCoin(id, preset){
         soldOn: status === "sold" ? (g("f-soldon").value || todayStr()) : g("f-soldon").value,
         soldVia: g("f-soldvia").value.trim(), salePrice: num(g("f-saleprice").value), saleFees: num(g("f-salefees").value), shipCost: num(g("f-ship").value),
         buyer: g("f-buyer").value.trim(),
+        listed: status === "stock" && g("f-listed").checked, listedOn: g("f-listedon").value.trim(), listedDate: g("f-listeddate").value, askPrice: num(g("f-ask").value),
         consignee: g("f-consignee").value.trim(), consignedOn: g("f-consignedon").value || (status === "consigned" ? todayStr() : ""),
         auction: g("f-auction").value.trim(), lot: g("f-lot").value.trim(), commission: g("f-commission").value === "" ? "" : num(g("f-commission").value),
         payFrom: g("f-payfrom").value, payTo: g("f-payto").value,
@@ -853,6 +881,59 @@ function certUseLabel(){
   ctx.certDiffs = [];
   const out = f.querySelector("#f-certout");
   if (out) out.innerHTML = `<div class="certdiff"><p>Updated to the label's details. Save to keep the changes.</p></div>`;
+}
+
+/* mark several in-stock coins listed for sale */
+function openListing(){
+  const eligible = [...state.coins.entries()].filter(([, c]) => c.status === "stock")
+    .sort((a, b) => (isListed(b[1]) - isListed(a[1])) || String(a[1].name).localeCompare(String(b[1].name)));
+  const html = `<form class="sheet-form" id="lst-form" novalidate>
+    <header class="sh-head gut"><h2 id="sh-title">Listed for sale</h2><button type="button" class="x" data-sh="close" aria-label="Close">✕</button></header>
+    <div class="sh-body gut">
+      <section class="sec">
+        <div class="grid2">
+          <div class="field"><label for="l-where">Where</label><input id="l-where" list="dl-platforms" value="Facebook" autocomplete="off"></div>
+          <div class="field"><label for="l-date">Date listed</label><input id="l-date" type="date" value="${todayStr()}"></div>
+        </div>
+        <p class="hint">Tick the coins that are listed and add an asking price if you like. Untick a coin that's no longer listed. Coins already listed keep their original date.</p>
+        ${dl("dl-platforms", PLATFORMS.concat([...state.coins.values()].map(x => x.listedOn)))}
+      </section>
+      <section class="sec">
+        <div class="block-head"><h3 class="eyebrow">In-stock coins</h3><span class="split" id="l-count"></span></div>
+        ${eligible.length > 6 ? `<input type="search" id="l-q" placeholder="Filter coins" aria-label="Filter coins" autocomplete="off">` : ""}
+        <div>${eligible.map(([cid, c]) => `<div class="chk" data-q="${esc([c.name, c.grade, c.cert, c.grader, c.variety].join(" ").toLowerCase())}">
+          <input type="checkbox" id="l-ck-${esc(cid)}" value="${esc(cid)}"${isListed(c) ? " checked" : ""}>
+          <label for="l-ck-${esc(cid)}"><span class="row-title">${esc(c.name)}${exTag(c)}</span><span class="row-sub">${esc(gradeLine(c))}${c.cert ? " · #" + esc(c.cert) : ""} · cost ${fmt(basis(c))}${isListed(c) && c.listedOn ? " · on " + esc(c.listedOn) : ""}</span></label>
+          <div class="field ask"><label for="l-a-${esc(cid)}">Asking price</label><input id="l-a-${esc(cid)}" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="Optional"></div>
+        </div>`).join("") || `<p class="muted sm">No coins are in stock right now.</p>`}</div>
+      </section>
+    </div>
+    <footer class="sh-foot gut" id="sh-foot"><span class="grow"></span><button type="button" class="btn ghost" data-sh="close">Cancel</button><button type="submit" class="btn primary" id="sh-save">Save</button></footer>
+  </form>`;
+  const count = () => {
+    const f = panel.querySelector("#lst-form"); if (!f) return;
+    const n = f.querySelectorAll('input[id^="l-ck-"]:checked').length;
+    f.querySelector("#l-count").textContent = plural(n, "coin") + " listed";
+  };
+  openSheet(html, {
+    what: "listing",
+    onInput(e){ if (e.target.id === "l-q"){ const q = e.target.value.trim().toLowerCase(); panel.querySelectorAll("#lst-form .chk").forEach(el => { el.hidden = !!q && !el.dataset.q.includes(q); }); } count(); },
+    onChange: count,
+    onSubmit(f){
+      const where = f.querySelector("#l-where").value.trim() || "Facebook", date = f.querySelector("#l-date").value || todayStr(), now = nowIso();
+      const writes = [];
+      for (const [cid, c] of eligible){
+        const on = f.querySelector("#l-ck-" + CSS.escape(cid)).checked, ask = num(f.querySelector("#l-a-" + CSS.escape(cid)).value);
+        if (on){
+          const next = Object.assign({}, c, {listed: true, listedOn: isListed(c) && c.listedOn ? c.listedOn : where, listedDate: isListed(c) && c.listedDate ? c.listedDate : date, askPrice: ask});
+          if (JSON.stringify(next) !== JSON.stringify(c)) writes.push(["set", "coins", cid, Object.assign(next, {updated: now})]);
+        } else if (isListed(c)) writes.push(["set", "coins", cid, Object.assign({}, c, {listed: false, updated: now})]);
+      }
+      if (!writes.length){ closeSheet(); return; }
+      guarded(async () => { await runWrites(writes); closeSheet(); toast("Updated " + plural(writes.length, "coin")); });
+    }
+  }, null);
+  count();
 }
 
 /* consign several coins to an auction house */
@@ -1239,7 +1320,8 @@ function openExp(id){
 /* pick a coin to sell */
 function openPicker(){
   const order = {stock:0, consigned:1, grading:2, incoming:3};
-  const arr = [...state.coins.entries()].filter(([, c]) => c.status !== "sold").sort((a, b) => (order[a[1].status] - order[b[1].status]) || String(a[1].name).localeCompare(String(b[1].name)));
+  const rank = c => isListed(c) ? -1 : order[c.status];
+  const arr = [...state.coins.entries()].filter(([, c]) => c.status !== "sold").sort((a, b) => (rank(a[1]) - rank(b[1])) || String(a[1].name).localeCompare(String(b[1].name)));
   const html = `<div class="sheet-form">
     <header class="sh-head gut"><h2 id="sh-title">Which coin sold?</h2><button type="button" class="x" data-sh="close" aria-label="Close">✕</button></header>
     <div class="sh-body gut">
@@ -1854,6 +1936,7 @@ main.addEventListener("click", e => {
     case "record-sale": if (needDb()) openPicker(); break;
     case "collect": openCollect(b.dataset.b || ""); break;
     case "consign": if (needDb()) openConsign(null); break;
+    case "list-coins": if (needDb()) openListing(); break;
     case "consign-results": openConsignResults(b.dataset.h || ""); break;
     case "new-sub": if (needDb()) openSub(null); break;
     case "edit-sub": openSub(id); break;
