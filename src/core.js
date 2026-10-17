@@ -41,6 +41,9 @@ const FILTERS = [["active","Active"],["incoming","Awaiting"],["stock","In stock"
 // An in-stock coin can be listed for sale somewhere (Facebook by default) and stays in stock until it sells.
 const PLATFORMS = ["Facebook","Facebook auction","eBay","Kijiji","Coin show table","Website"];
 const isListed = c => c.status === "stock" && !!c.listed;
+const isAuction = c => (c.listFormat || "auction") === "auction";
+const lastFormat = () => store.get("listFormat") === "fixed" ? "fixed" : "auction";
+const priceWord = fmtKey => fmtKey === "fixed" ? "Asking price" : "Current bid";
 const listPill = c => `<span class="pill list">Listed${c.listedOn ? " \u00b7 " + esc(c.listedOn) : ""}</span>`;
 const HOUSES = ["TCNC","Geoffrey Bell Auctions","Heritage Auctions","Stack's Bowers","Torex"];
 const ACCTS = [["cash","Cash"],["eq","EQ Bank"]];
@@ -332,7 +335,7 @@ function coinRow(id, c){
   const sub = [gradeLine(c), c.variety, c.comments, c.cert ? "#" + c.cert : "", c.status === "sold" ? "sold " + fmtShort(c.soldOn) + (c.buyer ? " to " + c.buyer : "") : (c.boughtOn ? "bought " + fmtShort(c.boughtOn) : "")].filter(Boolean).map(esc).join(" · ");
   let side;
   if (c.status === "sold"){ const pr = profit(c); side = `${isUnpaid(c) ? '<span class="pill in">Payment due</span>' : pill("sold")}<span class="fig">${fmt(c.salePrice)}</span><span class="fig sm ${pr < 0 ? "neg" : "pos"}">${fmtSigned(pr)}</span>`; }
-  else if (isListed(c)) side = `${listPill(c)}<span class="fig">${fmt(basis(c))}</span>${c.askPrice ? `<span class="fig sm muted">asking ${fmt(c.askPrice)}</span>` : ""}`;
+  else if (isListed(c)) side = `${listPill(c)}<span class="fig">${fmt(basis(c))}</span>${c.askPrice ? `<span class="fig sm muted">${isAuction(c) ? "bid" : "asking"} ${fmt(c.askPrice)}</span>` : (isAuction(c) && c.listEnds ? `<span class="fig sm muted">ends ${fmtShort(c.listEnds)}</span>` : "")}`;
   else side = `${pill(c.status)}<span class="fig">${fmt(basis(c))}</span>`;
   return `<button class="row" data-act="edit-coin" data-id="${esc(id)}"><span class="row-main"><span class="row-title">${esc(c.name || "Untitled coin")}${exTag(c)}</span><span class="row-sub">${sub}</span></span><span class="row-side">${side}</span></button>`;
 }
@@ -543,7 +546,7 @@ async function exportAll(){
   catch(e){ if (!e || e.code !== "declined") toast("The backup didn't save. Try again."); }
 }
 function exportCoins(){
-  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Listed on","Asking price","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
+  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Listed on","Current bid or asking price","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
   const arr = [...state.coins.values()].sort((a, b) => (a.boughtOn || "").localeCompare(b.boughtOn || ""));
   for (const c of arr){ const s = c.status === "sold";
     rows.push([c.name, c.grader, c.grade, c.cert, c.variety || "", c.comments || "", (STATUS[c.status] || {}).label || c.status, isListed(c) ? (c.listedOn || "Listed") : "", isListed(c) && c.askPrice ? m2(c.askPrice) : "", c.status === "consigned" ? (c.consignee || "") : "", c.boughtOn, c.source, m2(c.cost), m2(c.buyFees), m2(c.gradeCost), m2(basis(c)), s ? c.soldOn : "", s ? c.soldVia : "", s ? c.buyer || "" : "", s ? (c.paid === false ? "Not paid" : (c.paidOn || c.soldOn)) : "", s ? m2(c.salePrice) : "", s ? m2(c.saleFees) : "", s ? m2(c.shipCost) : "", s ? m2(netSale(c)) : "", s ? m2(profit(c)) : "", c.notes]); }
@@ -608,6 +611,7 @@ function openCoin(id, preset){
   const vias = VIA.concat([...state.coins.values()].map(x => x.soldVia));
   const buyers = [...state.coins.values()].map(x => x.buyer);
   const unpaid = c.paid === false;
+  const lf = c.listed ? (c.listFormat || "auction") : lastFormat();
   const html = `<form class="sheet-form" id="coin-form" novalidate>
     <header class="sh-head gut"><h2 id="sh-title">${src ? esc(c.name || "Coin") : "Add a coin"}</h2><button type="button" class="x" data-sh="close" aria-label="Close">✕</button></header>
     <div class="sh-body gut">
@@ -627,10 +631,17 @@ function openCoin(id, preset){
         <div class="field"><span class="lab" id="st-lab">Status</span><div class="status-pick" role="radiogroup" aria-labelledby="st-lab">${Object.entries(STATUS).map(([k, s]) => `<label class="sp ${s.cls}"><input type="radio" name="status" id="f-st-${k}" value="${k}"${c.status === k ? " checked" : ""}><span>${s.label}</span></label>`).join("")}</div></div>
         <div class="listbox" id="list-sec"${c.status === "stock" ? "" : " hidden"}>
           <label class="inc"><input type="checkbox" id="f-listed"${c.listed ? " checked" : ""}><span>Listed for sale</span></label>
-          <div class="grid3" id="list-fields"${c.listed ? "" : " hidden"}>
-            <div class="field"><label for="f-listedon">Where</label><input id="f-listedon" list="dl-platforms" value="${esc(c.listedOn || "Facebook")}" autocomplete="off"></div>
-            <div class="field"><label for="f-listeddate">Date listed</label><input id="f-listeddate" type="date" value="${esc(c.listedDate || "")}"></div>
-            <div class="field"><label for="f-ask">Asking price</label><input id="f-ask" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="0.00"></div>
+          <div class="list-fields grid" id="list-fields"${c.listed ? "" : " hidden"}>
+            <div class="status-pick duo" role="radiogroup" aria-label="Kind of listing">
+              <label class="sp stock"><input type="radio" name="lformat" id="f-lf-auction" value="auction"${lf === "auction" ? " checked" : ""}><span>Auction</span></label>
+              <label class="sp stock"><input type="radio" name="lformat" id="f-lf-fixed" value="fixed"${lf === "fixed" ? " checked" : ""}><span>Fixed price</span></label>
+            </div>
+            <div class="grid2">
+              <div class="field"><label for="f-listedon">Where</label><input id="f-listedon" list="dl-platforms" value="${esc(c.listedOn || "Facebook")}" autocomplete="off"></div>
+              <div class="field"><label for="f-listeddate">Date listed</label><input id="f-listeddate" type="date" value="${esc(c.listedDate || "")}"></div>
+              <div class="field"><label for="f-ask" id="f-ask-lab">${priceWord(lf)}</label><input id="f-ask" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="${lf === "fixed" ? "0.00" : "No bids yet"}"></div>
+              <div class="field" id="f-ends-f"${lf === "fixed" ? " hidden" : ""}><label for="f-ends">Auction ends</label><input id="f-ends" type="date" value="${esc(c.listEnds || "")}"></div>
+            </div>
           </div>
           ${dl("dl-platforms", PLATFORMS.concat([...state.coins.values()].map(x => x.listedOn)))}
         </div>
@@ -739,6 +750,13 @@ function openCoin(id, preset){
         const po = panel.querySelector("#f-paidon"); if (yes && !po.value && src && src.paid === false) po.value = todayStr();
         return;
       }
+      if (e.target.name === "lformat"){
+        const fixed = e.target.value === "fixed";
+        panel.querySelector("#f-ask-lab").textContent = priceWord(e.target.value);
+        panel.querySelector("#f-ask").placeholder = fixed ? "0.00" : "No bids yet";
+        panel.querySelector("#f-ends-f").hidden = fixed;
+        return;
+      }
       if (e.target.id === "f-listed"){
         panel.querySelector("#list-fields").hidden = !e.target.checked;
         const ld = panel.querySelector("#f-listeddate"); if (e.target.checked && !ld.value) ld.value = todayStr();
@@ -782,6 +800,7 @@ function openCoin(id, preset){
         soldVia: g("f-soldvia").value.trim(), salePrice: num(g("f-saleprice").value), saleFees: num(g("f-salefees").value), shipCost: num(g("f-ship").value),
         buyer: g("f-buyer").value.trim(),
         listed: status === "stock" && g("f-listed").checked, listedOn: g("f-listedon").value.trim(), listedDate: g("f-listeddate").value, askPrice: num(g("f-ask").value),
+        listFormat: (f.querySelector("input[name=lformat]:checked") || {}).value || "auction", listEnds: g("f-ends").value,
         consignee: g("f-consignee").value.trim(), consignedOn: g("f-consignedon").value || (status === "consigned" ? todayStr() : ""),
         auction: g("f-auction").value.trim(), lot: g("f-lot").value.trim(), commission: g("f-commission").value === "" ? "" : num(g("f-commission").value),
         payFrom: g("f-payfrom").value, payTo: g("f-payto").value,
@@ -791,6 +810,7 @@ function openCoin(id, preset){
       const paidYes = (f.querySelector("input[name=paid]:checked") || {}).value !== "no";
       if (status === "sold"){ doc.paid = paidYes; doc.paidOn = paidYes ? (g("f-paidon").value || doc.soldOn) : ""; }
       else { delete doc.paid; doc.paidOn = ""; }
+      if (doc.listed) store.set("listFormat", doc.listFormat);
       if (!src) store.set("payFrom", doc.payFrom); if (status === "sold" && paidYes) store.set("payTo", doc.payTo);
       guarded(async () => { const cid = id || newId("coins"); await runWrites([["set", "coins", cid, doc]]); closeSheet(); toast(src ? "Coin saved" : "Coin added"); });
     },
@@ -895,7 +915,12 @@ function openListing(){
           <div class="field"><label for="l-where">Where</label><input id="l-where" list="dl-platforms" value="Facebook" autocomplete="off"></div>
           <div class="field"><label for="l-date">Date listed</label><input id="l-date" type="date" value="${todayStr()}"></div>
         </div>
-        <p class="hint">Tick the coins that are listed and add an asking price if you like. Untick a coin that's no longer listed. Coins already listed keep their original date.</p>
+        <div class="status-pick duo" role="radiogroup" aria-label="Kind of listing">
+          <label class="sp stock"><input type="radio" name="lformat" id="l-lf-auction" value="auction"${lastFormat() === "auction" ? " checked" : ""}><span>Auction</span></label>
+          <label class="sp stock"><input type="radio" name="lformat" id="l-lf-fixed" value="fixed"${lastFormat() === "fixed" ? " checked" : ""}><span>Fixed price</span></label>
+        </div>
+        <div class="field" id="l-ends-f"${lastFormat() === "fixed" ? " hidden" : ""}><label for="l-ends">Auction ends</label><input id="l-ends" type="date"></div>
+        <p class="hint">Tick the coins that are listed. You can note the current bid as it changes. Untick a coin that's no longer listed. Coins already listed keep their original date.</p>
         ${dl("dl-platforms", PLATFORMS.concat([...state.coins.values()].map(x => x.listedOn)))}
       </section>
       <section class="sec">
@@ -904,7 +929,7 @@ function openListing(){
         <div>${eligible.map(([cid, c]) => `<div class="chk" data-q="${esc([c.name, c.grade, c.cert, c.grader, c.variety].join(" ").toLowerCase())}">
           <input type="checkbox" id="l-ck-${esc(cid)}" value="${esc(cid)}"${isListed(c) ? " checked" : ""}>
           <label for="l-ck-${esc(cid)}"><span class="row-title">${esc(c.name)}${exTag(c)}</span><span class="row-sub">${esc(gradeLine(c))}${c.cert ? " · #" + esc(c.cert) : ""} · cost ${fmt(basis(c))}${isListed(c) && c.listedOn ? " · on " + esc(c.listedOn) : ""}</span></label>
-          <div class="field ask"><label for="l-a-${esc(cid)}">Asking price</label><input id="l-a-${esc(cid)}" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="Optional"></div>
+          <div class="field ask"><label for="l-a-${esc(cid)}" class="l-pw">${priceWord(lastFormat())}</label><input id="l-a-${esc(cid)}" type="number" step="0.01" min="0" inputmode="decimal" value="${mv(c.askPrice)}" placeholder="${lastFormat() === "fixed" ? "Optional" : "No bids yet"}"></div>
         </div>`).join("") || `<p class="muted sm">No coins are in stock right now.</p>`}</div>
       </section>
     </div>
@@ -918,14 +943,25 @@ function openListing(){
   openSheet(html, {
     what: "listing",
     onInput(e){ if (e.target.id === "l-q"){ const q = e.target.value.trim().toLowerCase(); panel.querySelectorAll("#lst-form .chk").forEach(el => { el.hidden = !!q && !el.dataset.q.includes(q); }); } count(); },
-    onChange: count,
+    onChange(e){
+      if (e.target.name === "lformat"){
+        const fixed = e.target.value === "fixed";
+        panel.querySelectorAll("#lst-form .l-pw").forEach(el => { el.textContent = priceWord(e.target.value); });
+        panel.querySelectorAll('#lst-form input[id^="l-a-"]').forEach(el => { el.placeholder = fixed ? "Optional" : "No bids yet"; });
+        panel.querySelector("#l-ends-f").hidden = fixed;
+      }
+      count();
+    },
     onSubmit(f){
       const where = f.querySelector("#l-where").value.trim() || "Facebook", date = f.querySelector("#l-date").value || todayStr(), now = nowIso();
+      const format = (f.querySelector("input[name=lformat]:checked") || {}).value || "auction", ends = format === "auction" ? f.querySelector("#l-ends").value : "";
+      store.set("listFormat", format);
       const writes = [];
       for (const [cid, c] of eligible){
         const on = f.querySelector("#l-ck-" + CSS.escape(cid)).checked, ask = num(f.querySelector("#l-a-" + CSS.escape(cid)).value);
         if (on){
-          const next = Object.assign({}, c, {listed: true, listedOn: isListed(c) && c.listedOn ? c.listedOn : where, listedDate: isListed(c) && c.listedDate ? c.listedDate : date, askPrice: ask});
+          const next = Object.assign({}, c, {listed: true, listedOn: isListed(c) && c.listedOn ? c.listedOn : where, listedDate: isListed(c) && c.listedDate ? c.listedDate : date, askPrice: ask,
+            listFormat: isListed(c) && c.listFormat ? c.listFormat : format, listEnds: isListed(c) && c.listEnds ? c.listEnds : ends});
           if (JSON.stringify(next) !== JSON.stringify(c)) writes.push(["set", "coins", cid, Object.assign(next, {updated: now})]);
         } else if (isListed(c)) writes.push(["set", "coins", cid, Object.assign({}, c, {listed: false, updated: now})]);
       }
