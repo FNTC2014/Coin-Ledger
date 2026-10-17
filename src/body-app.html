@@ -1,0 +1,33 @@
+<section id="auth" class="auth gut" hidden>
+  <div class="auth-card">
+    <div class="auth-brand">
+      <svg class="mark big" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="1.1 1.2"/><circle cx="14" cy="14" r="9.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M14 8.6v10.8M16.6 11.2c-.5-.9-1.4-1.3-2.6-1.3-1.7 0-2.8 1-2.8 2.4 0 1.3 1 1.9 2.8 2.3 1.9.4 2.9 1 2.9 2.4 0 1.4-1.2 2.4-2.9 2.4-1.3 0-2.3-.5-2.8-1.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <h1>Coin Ledger</h1>
+    </div>
+    <p class="muted" id="auth-sub">Sign in to your ledger. It stays in sync between this phone and your computer.</p>
+    <form id="auth-form" novalidate>
+      <div class="field"><label for="a-email">Email</label><input id="a-email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false"></div>
+      <div class="field"><label for="a-pass">Password</label><input id="a-pass" type="password" autocomplete="current-password"></div>
+      <p class="auth-msg" id="auth-msg" role="alert" hidden></p>
+      <button class="btn primary" type="submit" id="auth-go">Sign in</button>
+    </form>
+    <div class="auth-links"><button type="button" class="linkbtn" id="auth-mode">Create an account</button><button type="button" class="linkbtn" id="auth-reset">Forgot password</button></div>
+    <p class="note warn" id="auth-noconfig" hidden>This copy of the app isn't connected to a Firebase project yet. Follow SETUP.md in the Coin-Ledger repository, then install the new build.</p>
+    <p class="hint" id="auth-version"></p>
+  </div>
+</section>
+
+<div id="app" hidden>
+<header class="mast">
+  <div class="mast-in gut">
+    <svg class="mark" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="1.1 1.2"/><circle cx="14" cy="14" r="9.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M14 8.6v10.8M16.6 11.2c-.5-.9-1.4-1.3-2.6-1.3-1.7 0-2.8 1-2.8 2.4 0 1.3 1 1.9 2.8 2.3 1.9.4 2.9 1 2.9 2.4 0 1.4-1.2 2.4-2.9 2.4-1.3 0-2.3-.5-2.8-1.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    <span class="brand">Coin Ledger</span>
+    <span class="sync" id="sync" aria-live="polite"></span>
+    <button type="button" class="iconbtn" id="settings-btn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5a7.4 7.4 0 0 0-2.6 1.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+  </div>
+  <div class="tabs-wrap"><nav class="tabs gut" id="tabs" role="tablist" aria-label="Sections"></nav></div>
+</header>
+<main id="main" class="wrap gut"><div class="loading card">Opening your ledger. Your inventory, grading submissions, sales and expenses will appear here.</div></main>
+</div>
+<div id="sheet" class="sheet" hidden><div class="scrim"></div><div class="panel" role="dialog" aria-modal="true" aria-labelledby="sh-title"></div></div>
+<div id="toast" class="toast" role="status" hidden></div>

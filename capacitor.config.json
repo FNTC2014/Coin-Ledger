@@ -1,0 +1,8 @@
+{
+  "appId": "com.fntc2014.coinledger",
+  "appName": "Coin Ledger",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#0E1413"
+  }
+}

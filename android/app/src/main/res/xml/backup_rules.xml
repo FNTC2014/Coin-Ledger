@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default Android backup. The ledger itself lives in Firebase, so a new phone only needs you to sign in. -->
+<full-backup-content>
+</full-backup-content>

@@ -1,0 +1,15 @@
+/* App only: sign-in screen and the settings button. Colours come from the ledger's tokens. */
+.iconbtn{margin-left:4px;width:36px;height:36px;border:0;border-radius:8px;background:none;color:var(--ink-2);display:grid;place-items:center;cursor:pointer;flex:none}
+.iconbtn:hover{background:var(--surface-2);color:var(--ink)}
+.iconbtn svg{width:22px;height:22px}
+.auth{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding-block:32px;background:var(--bg)}
+.auth-card{width:100%;max-width:400px;display:grid;gap:16px}
+.auth-brand{display:flex;align-items:center;gap:12px}
+.auth-brand h1{font-size:30px}
+.mark.big{width:40px;height:40px}
+#auth-form{display:grid;gap:12px}
+#auth-form .btn{width:100%;min-height:46px;font-size:15px}
+.auth-msg{font-size:14px;color:var(--neg);font-weight:500}
+.auth-msg.ok{color:var(--pos)}
+.auth-links{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px}
+.pick-inline{position:relative;overflow:hidden}
