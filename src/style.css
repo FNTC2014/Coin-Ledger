@@ -333,3 +333,18 @@ input.missing{border-style:dashed}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .status-pick.tri{grid-template-columns:repeat(3,minmax(0,1fr))}
 .move-form[data-kind="in"] .m-from,.move-form[data-kind="out"] .m-to{display:none}
+
+/* Statements with an at-cost and a wholesale column, and rows you can tap */
+.sl3{display:grid;grid-template-columns:minmax(0,1fr) minmax(84px,auto) minmax(84px,auto);gap:4px 14px;align-items:baseline}
+.sl3 .fig{text-align:right}
+.sl3.head{padding-top:8px;padding-bottom:6px}
+.sl3.head .eyebrow{text-align:right;font-size:11px}
+.sl.grp{padding-top:12px;padding-bottom:4px}
+.sl.grp .eyebrow{font-size:11px}
+.sl.go{width:100%;background:none;border:0;border-top:1px solid var(--line-2);font:inherit;color:inherit;text-align:left;cursor:pointer}
+.sl.go:hover{background:var(--surface-2)}
+.sl.ind .lbl{padding-left:14px}
+.sl .lbl .dot{display:inline-block;margin-right:8px;vertical-align:1px}
+.sl.grp + .sl.go{border-top:0}
+.pos-grid{align-items:start}
+@media (max-width:420px){.sl3{grid-template-columns:minmax(0,1fr) minmax(78px,auto) minmax(78px,auto);gap:4px 10px}.sl3 .fig{font-size:13px}}

@@ -243,7 +243,6 @@ function overview(){
   const bl = balances(), funds = num(bl.cash.bal + bl.eq.bal), anyMoney = state.accounts.size || bl.cash.rows.length || bl.eq.rows.length;
   const margin = s.revenue > 0 ? Math.round(s.gross / s.revenue * 1000) / 10 : null;
   const nListed = [...state.coins.values()].filter(isListed).length;
-  const tile = k => `<button class="tile" data-act="goto-inv" data-f="${k}"><span class="tile-lab"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}</span><span class="tile-n">${p[k].n}</span><span class="fig">${fmt0(p[k].v)} cost</span><span class="fig">${fmt0(p[k].w)} wholesale</span>${k === "stock" && nListed ? `<span class="tile-sub">${nListed} listed for sale</span>` : ""}</button>`;
 
   const months = monthly();
   const anySales = months.some(x => x.n > 0);
@@ -260,6 +259,18 @@ function overview(){
   const openSubs = [...state.subs.entries()].filter(([, x]) => x.status !== "returned").sort((a, b) => (a[1].sentOn || "").localeCompare(b[1].sentOn || ""));
   const incoming = [...state.coins.entries()].filter(([, c]) => c.status === "incoming").sort((a, b) => (a[1].boughtOn || "").localeCompare(b[1].boughtOn || ""));
   const owed = owedGroups(), owedTotal = num(owed.reduce((a, x) => a + x.total, 0));
+  const invRow = k => {
+    const x = p[k]; if (!x.n) return "";
+    const houses = k === "consigned" ? consignGroups() : [];
+    const extra = k === "stock" && nListed ? `, ${nListed} listed` : (houses.length === 1 && houses[0].house ? " at " + esc(houses[0].house) : "");
+    let h = `<button class="sl sl3 go" data-act="goto-inv" data-f="${k}"><span class="lbl"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}<small>${plural(x.n, "coin")}${extra}</small></span><span class="fig">${fmt(x.v)}</span><span class="fig">${fmt(x.w)}</span></button>`;
+    if (houses.length > 1) for (const g of houses){
+      const gw = sum(g.items, ([, c]) => wsOf(c));
+      h += `<button class="sl sl3 go ind minor" data-act="consign-results" data-h="${esc(g.house)}"><span class="lbl">${esc(g.house || "Auction house not named")}<small>${plural(g.items.length, "coin")}</small></span><span class="fig">${fmt(g.value)}</span><span class="fig">${fmt(gw)}</span></button>`;
+    }
+    return h;
+  };
+  const invRows = ["stock", "consigned", "grading", "incoming"].map(invRow).filter(Boolean);
   const attn = [
     ...owed.map(owedRow),
     ...consignGroups().map(consRow),
@@ -269,30 +280,40 @@ function overview(){
   if (incoming.length > 8) attn.push(`<button class="row" data-act="goto-inv" data-f="incoming"><span class="row-main"><span class="row-sub">${incoming.length - 8} more awaiting receipt</span></span><span class="row-side"><span class="fig sm">View all</span></span></button>`);
 
   return `
-  <section class="block">
-    <div class="block-head"><h2>On hand</h2><span class="cap">At cost (price paid, purchase fees and grading) and at current wholesale</span></div>
-    <div class="pipe">${tile("incoming")}${tile("stock")}${tile("grading")}${tile("consigned")}
-      <div class="tile total"><span class="tile-lab">Total inventory \u00b7 ${plural(totalN, "coin")}</span>
-        <div class="tv2">
-          <div><span class="tile-n">${fmt(totalV)}</span><span class="tv-cap">at cost</span></div>
-          <div><span class="tile-n">${fmt(totalW)}</span><span class="tv-cap">at wholesale${totalN ? ` <span class="${totalW - totalV < 0 ? "neg" : "pos"}">${fmtSigned(num(totalW - totalV))}</span>` : ""}</span></div>
-        </div>
-        ${totalNV ? `<button class="linkbtn sm" data-act="values">${plural(totalNV, "coin")} not valued yet, counted at cost</button>` : ""}
-      </div>
-    </div>
-    <div class="btnrow"><button class="btn primary" data-act="new-coin">Add coin</button>${scanBtn()}<button class="btn" data-act="values">Update wholesale values</button></div>
-  </section>
+  <div class="btnrow"><button class="btn primary" data-act="new-coin">Add coin</button>${scanBtn()}</div>
+  <div class="two pos-grid">
   <section class="block">
     <div class="block-head"><h2>Money</h2><button class="btn small" data-act="tab" data-t="money">View activity</button></div>
-    ${anyMoney ? `<div class="card stmt">
+    <div class="card stmt">
       <div class="sl"><span class="lbl">Cash</span><span class="fig ${bl.cash.bal < 0 ? "neg" : ""}">${fmtS(bl.cash.bal)}</span></div>
       <div class="sl"><span class="lbl">EQ Bank</span><span class="fig ${bl.eq.bal < 0 ? "neg" : ""}">${fmtS(bl.eq.bal)}</span></div>
-      <div class="sl total"><span class="lbl">Total funds</span><span class="fig">${fmtS(funds)}</span></div>
-      <div class="sl minor"><span class="lbl">Funds plus inventory at cost</span><span class="fig">${fmtS(funds + totalV)}</span></div>
-      <div class="sl minor"><span class="lbl">Funds plus inventory at wholesale</span><span class="fig">${fmtS(funds + totalW)}</span></div>
-      ${owedTotal ? `<div class="sl minor"><span class="lbl">Owed to you<small>${plural(owed.reduce((a, x) => a + x.items.length, 0), "coin")}</small></span><span class="fig">${fmt(owedTotal)}</span></div>` : ""}
-    </div>${!state.accounts.size ? `<p class="cap">Starting balances aren't set, so these only reflect what you've recorded. <button class="linkbtn" data-act="edit-acct">Set them</button></p>` : ""}`
-    : `<div class="card empty"><p>See your cash on hand and EQ Bank balance here. Set each starting balance, then choose which one pays whenever you record a purchase, sale, grading submission or expense.</p><button class="btn" data-act="edit-acct">Set starting balances</button></div>`}
+      <div class="sl subtotal"><span class="lbl">Total liquidity</span><span class="fig ${funds < 0 ? "neg" : ""}">${fmtS(funds)}</span></div>
+      ${owed.length ? `<div class="sl grp"><span class="lbl eyebrow">Owed to you</span></div>
+      ${owed.map(x => `<button class="sl go ind" data-act="collect" data-b="${esc(x.buyer)}"><span class="lbl">${esc(buyerLabel(x.buyer))}<small>${plural(x.items.length, "coin")}</small></span><span class="fig">${fmt(x.total)}</span></button>`).join("")}` : ""}
+      <div class="sl subtotal"><span class="lbl">Total money owed</span><span class="fig">${fmt(owedTotal)}</span></div>
+      <div class="sl total"><span class="lbl">Liquidity and money owed</span><span class="fig ${funds + owedTotal < 0 ? "neg" : ""}">${fmtS(num(funds + owedTotal))}</span></div>
+    </div>
+    ${!state.accounts.size ? `<p class="cap">Starting balances for Cash and EQ Bank aren't set, so these only reflect what you've recorded. <button class="linkbtn" data-act="edit-acct">Set them</button></p>` : ""}
+  </section>
+  <section class="block">
+    <div class="block-head"><h2>Inventory</h2><button class="btn small" data-act="values">Update values</button></div>
+    <div class="card stmt">
+      <div class="sl sl3 head"><span class="lbl"></span><span class="eyebrow">At cost</span><span class="eyebrow">Wholesale</span></div>
+      ${invRows.length ? invRows.join("") : `<div class="sl minor"><span class="lbl">No unsold coins</span></div>`}
+      <div class="sl sl3 total"><span class="lbl">Total inventory<small>${plural(totalN, "coin")}</small></span><span class="fig">${fmt(totalV)}</span><span class="fig">${fmt(totalW)}</span></div>
+      <div class="sl minor"><span class="lbl">Wholesale vs cost</span><span class="fig ${totalW - totalV < 0 ? "neg" : "pos"}">${fmtSigned(num(totalW - totalV))}</span></div>
+    </div>
+    ${totalNV ? `<p class="cap">${plural(totalNV, "coin")} ${totalNV === 1 ? "has" : "have"} no wholesale value yet and ${totalNV === 1 ? "is" : "are"} counted at cost. <button class="linkbtn" data-act="values">Add values</button></p>` : ""}
+  </section>
+  </div>
+  <section class="block">
+    <div class="block-head"><h2>Total position</h2><span class="cap">Money and inventory together</span></div>
+    <div class="card stmt">
+      <div class="sl sl3 head"><span class="lbl"></span><span class="eyebrow">At cost</span><span class="eyebrow">Wholesale</span></div>
+      <div class="sl sl3"><span class="lbl">Liquidity and money owed</span><span class="fig">${fmtS(num(funds + owedTotal))}</span><span class="fig">${fmtS(num(funds + owedTotal))}</span></div>
+      <div class="sl sl3"><span class="lbl">Inventory</span><span class="fig">${fmt(totalV)}</span><span class="fig">${fmt(totalW)}</span></div>
+      <div class="sl sl3 total"><span class="lbl">Total</span><span class="fig">${fmtS(num(funds + owedTotal + totalV))}</span><span class="fig">${fmtS(num(funds + owedTotal + totalW))}</span></div>
+    </div>
   </section>
   <section class="block">
     <div class="block-head"><h2>Profit and loss · ${esc(periodName(state.period))}</h2>${periodChips()}</div>
@@ -472,7 +493,7 @@ function moneyView(){
   return `
   <div class="vhead"><div><h2>Money</h2><p class="muted">Cash on hand and your EQ Bank account. Purchases, sales, grading and expenses paid from either one move these balances.</p></div>
     <div class="btnrow"><button class="btn" data-act="new-move" data-k="transfer">Transfer</button><button class="btn" data-act="new-move" data-k="in">Money in</button><button class="btn" data-act="new-move" data-k="out">Money out</button></div></div>
-  <div class="accts">${acctCard("cash")}${acctCard("eq")}<div class="acct total"><span class="tile-lab">Total funds</span><span class="acct-bal ${total < 0 ? "neg" : ""}">${fmtS(total)}</span><span class="cap">Cash plus EQ Bank</span></div></div>
+  <div class="accts">${acctCard("cash")}${acctCard("eq")}<div class="acct total"><span class="tile-lab">Total liquidity</span><span class="acct-bal ${total < 0 ? "neg" : ""}">${fmtS(total)}</span><span class="cap">Cash plus EQ Bank</span></div></div>
   <section class="block">
     <div class="block-head"><h3 class="eyebrow">Activity</h3><div class="seg" role="group" aria-label="Account">${[["all","Both"],["cash","Cash"],["eq","EQ Bank"]].map(([k, l]) => `<button class="seg-b" data-act="money-filter" data-f="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div></div>
     ${f !== "all" && shown.length ? `<p class="cap">Newest first, with the running balance under each amount.</p>` : ""}
