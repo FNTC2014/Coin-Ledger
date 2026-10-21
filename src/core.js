@@ -4,6 +4,8 @@ const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money = new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD"});
 const fmt = n => money.format(Math.abs(n) < 0.005 ? 0 : (n || 0));
+const money0 = new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",maximumFractionDigits:0});
+const fmt0 = n => money0.format(Math.round(n || 0));
 const fmtS = n => (n < -0.004 ? "−" : "") + money.format(Math.abs(n || 0));
 const fmtSigned = n => (n > 0.004 ? "+" : "") + fmtS(n);
 const fmtNeg = n => (Math.abs(n) > 0.004 ? "−" : "") + money.format(Math.abs(n || 0));
@@ -124,9 +126,15 @@ function stats(p){
     bought, boughtTotal: sum(bought, ([, c]) => (c.cost || 0) + (c.buyFees || 0)),
     subs, gradingTotal: sum(subs, s => s.total) };
 }
+// Current wholesale value: what a dealer would pay for the coin today, entered by hand.
+// Totals at wholesale count a coin that has no value yet at its cost, and say how many those are.
+const hasWs = c => c.wholesale !== "" && c.wholesale != null && Number(c.wholesale) > 0;
+const wsOf = c => hasWs(c) ? num(c.wholesale) : basis(c);
 function pipeline(){
-  const o = {incoming:{n:0, v:0}, stock:{n:0, v:0}, grading:{n:0, v:0}, consigned:{n:0, v:0}};
-  for (const c of state.coins.values()) if (o[c.status]){ o[c.status].n++; o[c.status].v += basis(c); }
+  const o = {};
+  for (const k of ["incoming", "stock", "grading", "consigned"]) o[k] = {n:0, v:0, w:0, nv:0};
+  for (const c of state.coins.values()) if (o[c.status]){ const x = o[c.status]; x.n++; x.v += basis(c); x.w += wsOf(c); if (!hasWs(c)) x.nv++; }
+  for (const k in o){ o[k].v = num(o[k].v); o[k].w = num(o[k].w); }
   return o;
 }
 const coinsInSub = id => [...state.coins.entries()].filter(([, c]) => c.subId === id);
@@ -229,12 +237,13 @@ function welcome(){
 function overview(){
   if (isEmpty()) return welcome();
   const p = pipeline();
-  const totalV = p.incoming.v + p.stock.v + p.grading.v + p.consigned.v, totalN = p.incoming.n + p.stock.n + p.grading.n + p.consigned.n;
+  const totalV = num(p.incoming.v + p.stock.v + p.grading.v + p.consigned.v), totalN = p.incoming.n + p.stock.n + p.grading.n + p.consigned.n;
+  const totalW = num(p.incoming.w + p.stock.w + p.grading.w + p.consigned.w), totalNV = p.incoming.nv + p.stock.nv + p.grading.nv + p.consigned.nv;
   const s = stats(state.period);
   const bl = balances(), funds = num(bl.cash.bal + bl.eq.bal), anyMoney = state.accounts.size || bl.cash.rows.length || bl.eq.rows.length;
   const margin = s.revenue > 0 ? Math.round(s.gross / s.revenue * 1000) / 10 : null;
   const nListed = [...state.coins.values()].filter(isListed).length;
-  const tile = k => `<button class="tile" data-act="goto-inv" data-f="${k}"><span class="tile-lab"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}</span><span class="tile-n">${p[k].n}</span><span class="fig">${fmt(p[k].v)}</span>${k === "stock" && nListed ? `<span class="tile-sub">${nListed} listed for sale</span>` : ""}</button>`;
+  const tile = k => `<button class="tile" data-act="goto-inv" data-f="${k}"><span class="tile-lab"><span class="dot ${STATUS[k].cls}"></span>${STATUS[k].label}</span><span class="tile-n">${p[k].n}</span><span class="fig">${fmt0(p[k].v)} cost</span><span class="fig">${fmt0(p[k].w)} wholesale</span>${k === "stock" && nListed ? `<span class="tile-sub">${nListed} listed for sale</span>` : ""}</button>`;
 
   const months = monthly();
   const anySales = months.some(x => x.n > 0);
@@ -261,11 +270,17 @@ function overview(){
 
   return `
   <section class="block">
-    <div class="block-head"><h2>On hand</h2><span class="cap">Valued at cost: price paid, purchase fees and grading</span></div>
+    <div class="block-head"><h2>On hand</h2><span class="cap">At cost (price paid, purchase fees and grading) and at current wholesale</span></div>
     <div class="pipe">${tile("incoming")}${tile("stock")}${tile("grading")}${tile("consigned")}
-      <div class="tile total"><span class="tile-lab">Total inventory</span><span class="tile-n">${fmt(totalV)}</span><span class="fig">${plural(totalN, "coin")}</span></div>
+      <div class="tile total"><span class="tile-lab">Total inventory \u00b7 ${plural(totalN, "coin")}</span>
+        <div class="tv2">
+          <div><span class="tile-n">${fmt(totalV)}</span><span class="tv-cap">at cost</span></div>
+          <div><span class="tile-n">${fmt(totalW)}</span><span class="tv-cap">at wholesale${totalN ? ` <span class="${totalW - totalV < 0 ? "neg" : "pos"}">${fmtSigned(num(totalW - totalV))}</span>` : ""}</span></div>
+        </div>
+        ${totalNV ? `<button class="linkbtn sm" data-act="values">${plural(totalNV, "coin")} not valued yet, counted at cost</button>` : ""}
+      </div>
     </div>
-    <div class="btnrow"><button class="btn primary" data-act="new-coin">Add coin</button>${scanBtn()}</div>
+    <div class="btnrow"><button class="btn primary" data-act="new-coin">Add coin</button>${scanBtn()}<button class="btn" data-act="values">Update wholesale values</button></div>
   </section>
   <section class="block">
     <div class="block-head"><h2>Money</h2><button class="btn small" data-act="tab" data-t="money">View activity</button></div>
@@ -274,6 +289,7 @@ function overview(){
       <div class="sl"><span class="lbl">EQ Bank</span><span class="fig ${bl.eq.bal < 0 ? "neg" : ""}">${fmtS(bl.eq.bal)}</span></div>
       <div class="sl total"><span class="lbl">Total funds</span><span class="fig">${fmtS(funds)}</span></div>
       <div class="sl minor"><span class="lbl">Funds plus inventory at cost</span><span class="fig">${fmtS(funds + totalV)}</span></div>
+      <div class="sl minor"><span class="lbl">Funds plus inventory at wholesale</span><span class="fig">${fmtS(funds + totalW)}</span></div>
       ${owedTotal ? `<div class="sl minor"><span class="lbl">Owed to you<small>${plural(owed.reduce((a, x) => a + x.items.length, 0), "coin")}</small></span><span class="fig">${fmt(owedTotal)}</span></div>` : ""}
     </div>${!state.accounts.size ? `<p class="cap">Starting balances aren't set, so these only reflect what you've recorded. <button class="linkbtn" data-act="edit-acct">Set them</button></p>` : ""}`
     : `<div class="card empty"><p>See your cash on hand and EQ Bank balance here. Set each starting balance, then choose which one pays whenever you record a purchase, sale, grading submission or expense.</p><button class="btn" data-act="edit-acct">Set starting balances</button></div>`}
@@ -337,6 +353,7 @@ function coinRow(id, c){
   if (c.status === "sold"){ const pr = profit(c); side = `${isUnpaid(c) ? '<span class="pill in">Payment due</span>' : pill("sold")}<span class="fig">${fmt(c.salePrice)}</span><span class="fig sm ${pr < 0 ? "neg" : "pos"}">${fmtSigned(pr)}</span>`; }
   else if (isListed(c)) side = `${listPill(c)}<span class="fig">${fmt(basis(c))}</span>${c.askPrice ? `<span class="fig sm muted">${isAuction(c) ? "bid" : "asking"} ${fmt(c.askPrice)}</span>` : (isAuction(c) && c.listEnds ? `<span class="fig sm muted">ends ${fmtShort(c.listEnds)}</span>` : "")}`;
   else side = `${pill(c.status)}<span class="fig">${fmt(basis(c))}</span>`;
+  if (c.status !== "sold" && hasWs(c)) side += `<span class="fig sm muted">wholesale ${fmt(c.wholesale)}</span>`;
   return `<button class="row" data-act="edit-coin" data-id="${esc(id)}"><span class="row-main"><span class="row-title">${esc(c.name || "Untitled coin")}${exTag(c)}</span><span class="row-sub">${sub}</span></span><span class="row-side">${side}</span></button>`;
 }
 function invListHTML(){
@@ -344,7 +361,10 @@ function invListHTML(){
   const coins = arr.map(x => x[1]);
   const unsold = coins.filter(c => c.status !== "sold"), sold = coins.filter(c => c.status === "sold");
   let line = `<b>${plural(arr.length, "coin")}</b>`;
-  if (unsold.length) line += `<span>${fmt(sum(unsold, basis))} at cost</span>`;
+  if (unsold.length){
+    const nv = unsold.filter(c => !hasWs(c)).length;
+    line += `<span>${fmt(sum(unsold, basis))} at cost</span><span>${fmt(sum(unsold, wsOf))} at wholesale${nv ? ` (${nv} not valued)` : ""}</span>`;
+  }
   if (sold.length) line += `<span>${fmt(sum(sold, c => c.salePrice))} sold, ${fmtSigned(sum(sold, profit))} profit</span>`;
   if (!state.coins.size) return `<div class="card empty"><p>No coins yet. Add the first one you've bought, even if it hasn't arrived.</p><button class="btn primary" data-act="new-coin">Add a coin</button></div>`;
   if (!arr.length) return `<div class="sumline">${line}</div><div class="card empty"><p>No coins match${state.invQuery ? ` “${esc(state.invQuery)}”` : ""} in this view.</p></div>`;
@@ -356,7 +376,7 @@ function inventory(){
   return `
   <div class="vhead"><div><h2>Inventory</h2><p class="muted">Every coin you've paid for, from purchase through grading to sale.</p></div><div class="btnrow">${scanBtn()}<button class="btn" data-act="consign">Consign coins</button><button class="btn primary" data-act="new-coin">Add coin</button></div></div>
   <div class="block">
-    <div class="toolbar"><input class="search" id="inv-q" type="search" placeholder="Search coin, grade, cert #, seller" value="${esc(state.invQuery)}" aria-label="Search inventory" autocomplete="off"><button class="btn" data-act="list-coins">Mark listed</button></div>
+    <div class="toolbar"><input class="search" id="inv-q" type="search" placeholder="Search coin, grade, cert #, seller" value="${esc(state.invQuery)}" aria-label="Search inventory" autocomplete="off"><button class="btn" data-act="list-coins">Mark listed</button><button class="btn" data-act="values">Update values</button></div>
     <div class="seg" role="group" aria-label="Filter">${FILTERS.map(([k, l]) => `<button class="seg-b" data-act="inv-filter" data-f="${k}" aria-pressed="${state.invFilter === k}">${l} <span class="fig sm">${counts[k]}</span></button>`).join("")}</div>
     <div id="inv-list" class="block">${invListHTML()}</div>
     ${state.dl && state.coins.size ? `<div class="btnrow"><button class="btn" data-act="export-coins">Export inventory (CSV)</button><button class="btn" data-act="export-all">Back up everything</button></div>` : ""}
@@ -546,10 +566,10 @@ async function exportAll(){
   catch(e){ if (!e || e.code !== "declined") toast("The backup didn't save. Try again."); }
 }
 function exportCoins(){
-  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Listed on","Current bid or asking price","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
+  const rows = [["Coin","Grader","Grade","Cert #","Variety","Cert comments","Status","Listed on","Current bid or asking price","Consigned to","Bought on","Bought from","Price paid","Purchase fees","Grading cost","Cost basis","Wholesale value","Valued on","Sold on","Sold via","Buyer","Paid on","Sale price","Selling fees","Shipping","Net from sale","Profit","Notes"]];
   const arr = [...state.coins.values()].sort((a, b) => (a.boughtOn || "").localeCompare(b.boughtOn || ""));
   for (const c of arr){ const s = c.status === "sold";
-    rows.push([c.name, c.grader, c.grade, c.cert, c.variety || "", c.comments || "", (STATUS[c.status] || {}).label || c.status, isListed(c) ? (c.listedOn || "Listed") : "", isListed(c) && c.askPrice ? m2(c.askPrice) : "", c.status === "consigned" ? (c.consignee || "") : "", c.boughtOn, c.source, m2(c.cost), m2(c.buyFees), m2(c.gradeCost), m2(basis(c)), s ? c.soldOn : "", s ? c.soldVia : "", s ? c.buyer || "" : "", s ? (c.paid === false ? "Not paid" : (c.paidOn || c.soldOn)) : "", s ? m2(c.salePrice) : "", s ? m2(c.saleFees) : "", s ? m2(c.shipCost) : "", s ? m2(netSale(c)) : "", s ? m2(profit(c)) : "", c.notes]); }
+    rows.push([c.name, c.grader, c.grade, c.cert, c.variety || "", c.comments || "", (STATUS[c.status] || {}).label || c.status, isListed(c) ? (c.listedOn || "Listed") : "", isListed(c) && c.askPrice ? m2(c.askPrice) : "", c.status === "consigned" ? (c.consignee || "") : "", c.boughtOn, c.source, m2(c.cost), m2(c.buyFees), m2(c.gradeCost), m2(basis(c)), hasWs(c) ? m2(c.wholesale) : "", hasWs(c) ? (c.wholesaleOn || "") : "", s ? c.soldOn : "", s ? c.soldVia : "", s ? c.buyer || "" : "", s ? (c.paid === false ? "Not paid" : (c.paidOn || c.soldOn)) : "", s ? m2(c.salePrice) : "", s ? m2(c.saleFees) : "", s ? m2(c.shipCost) : "", s ? m2(netSale(c)) : "", s ? m2(profit(c)) : "", c.notes]); }
   offer(`coin-inventory-${todayStr()}.csv`, rows);
 }
 function exportSales(){
@@ -677,6 +697,14 @@ function openCoin(id, preset){
         </div>
         <p class="hint">When it sells, mark it Sold. The auction house becomes the buyer, waiting for payment, and its commission becomes the selling fee.</p>
       </section>
+      <section class="sec" id="val-sec"${c.status === "sold" ? " hidden" : ""}>
+        <h3 class="eyebrow">Current value</h3>
+        <div class="grid2">
+          <div class="field"><label for="f-ws">Wholesale value</label><input id="f-ws" type="number" step="0.01" min="0" inputmode="decimal" value="${hasWs(c) ? mv(c.wholesale) : ""}" placeholder="Not valued yet"></div>
+          <div class="field"><label for="f-wsdate">Valued on</label><input id="f-wsdate" type="date" value="${esc(hasWs(c) ? (c.wholesaleOn || "") : "")}"></div>
+        </div>
+        <p class="hint">What a dealer would pay for it today. Inventory totals count a coin without a value at its cost.</p>
+      </section>
       <section class="sec" id="sale-sec"${c.status === "sold" ? "" : " hidden"}>
         <h3 class="eyebrow">Sale</h3>
         <div class="grid2">
@@ -713,6 +741,11 @@ function openCoin(id, preset){
     const st = (f.querySelector("input[name=status]:checked") || {}).value;
     const b = num(num(g("f-cost")) + num(g("f-buyfees")) + num(g("f-gradecost")));
     const sold = st === "sold", ns = num(num(g("f-saleprice")) - num(g("f-salefees")) - num(g("f-ship")));
+    const ws = num(g("f-ws"));
+    if (!sold){
+      f.querySelector("#coin-kpis").innerHTML = `<div><span class="lab">Cost basis</span><span class="fig">${fmt(b)}</span></div><div><span class="lab">Wholesale</span><span class="fig">${ws ? fmt(ws) : "\u2014"}</span></div><div><span class="lab">Vs cost</span><span class="fig ${ws ? (ws - b < 0 ? "neg" : "pos") : ""}">${ws ? fmtSigned(num(ws - b)) : "\u2014"}</span></div>`;
+      return;
+    }
     f.querySelector("#coin-kpis").innerHTML = `<div><span class="lab">Cost basis</span><span class="fig">${fmt(b)}</span></div><div><span class="lab">Net from sale</span><span class="fig">${sold ? fmt(ns) : "—"}</span></div><div><span class="lab">Profit</span><span class="fig ${sold ? (ns - b < 0 ? "neg" : "pos") : ""}">${sold ? fmtSigned(ns - b) : "—"}</span></div>`;
   };
   const gradeFill = () => {
@@ -729,6 +762,7 @@ function openCoin(id, preset){
     onInput(e){
       const f = panel.querySelector("#coin-form"), id = e.target.id;
       if (f && id === "f-salefees") e.target.dataset.auto = "0";
+      if (f && id === "f-ws"){ const d = f.querySelector("#f-wsdate"); d.value = e.target.value ? todayStr() : ""; }
       if (f && (id === "f-saleprice" || id === "f-commission")){
         const fees = f.querySelector("#f-salefees"), rate = num(f.querySelector("#f-commission").value), price = num(f.querySelector("#f-saleprice").value);
         if (rate > 0 && f.querySelector("#f-consignee").value.trim() && (fees.dataset.auto === "1" || !fees.value)){ fees.value = price ? num(price * rate / 100).toFixed(2) : ""; fees.dataset.auto = "1"; }
@@ -772,6 +806,7 @@ function openCoin(id, preset){
           if (!sp.value && src.askPrice) sp.value = src.askPrice;
         }
         panel.querySelector("#sale-sec").hidden = !sold;
+        panel.querySelector("#val-sec").hidden = sold;
         panel.querySelector("#con-sec").hidden = !con;
         const so = panel.querySelector("#f-soldon"); if (sold && !so.value) so.value = todayStr();
         const co = f.querySelector("#f-consignedon"); if (con && !co.value) co.value = todayStr();
@@ -799,6 +834,7 @@ function openCoin(id, preset){
         soldOn: status === "sold" ? (g("f-soldon").value || todayStr()) : g("f-soldon").value,
         soldVia: g("f-soldvia").value.trim(), salePrice: num(g("f-saleprice").value), saleFees: num(g("f-salefees").value), shipCost: num(g("f-ship").value),
         buyer: g("f-buyer").value.trim(),
+        wholesale: g("f-ws").value === "" ? "" : num(g("f-ws").value), wholesaleOn: g("f-ws").value === "" ? "" : (g("f-wsdate").value || todayStr()),
         listed: status === "stock" && g("f-listed").checked, listedOn: g("f-listedon").value.trim(), listedDate: g("f-listeddate").value, askPrice: num(g("f-ask").value),
         listFormat: (f.querySelector("input[name=lformat]:checked") || {}).value || "auction", listEnds: g("f-ends").value,
         consignee: g("f-consignee").value.trim(), consignedOn: g("f-consignedon").value || (status === "consigned" ? todayStr() : ""),
@@ -901,6 +937,54 @@ function certUseLabel(){
   ctx.certDiffs = [];
   const out = f.querySelector("#f-certout");
   if (out) out.innerHTML = `<div class="certdiff"><p>Updated to the label's details. Save to keep the changes.</p></div>`;
+}
+
+/* update the wholesale value of every unsold coin in one place */
+function openValues(){
+  const order = {stock:0, consigned:1, grading:2, incoming:3};
+  const coins = [...state.coins.entries()].filter(([, c]) => c.status !== "sold")
+    .sort((a, b) => (order[a[1].status] - order[b[1].status]) || String(a[1].name).localeCompare(String(b[1].name)));
+  if (!coins.length){ toast("There are no unsold coins to value."); return; }
+  const html = `<form class="sheet-form" id="val-form" novalidate>
+    <header class="sh-head gut"><h2 id="sh-title">Wholesale values</h2><button type="button" class="x" data-sh="close" aria-label="Close">\u2715</button></header>
+    <div class="sh-body gut">
+      <section class="sec">
+        <div class="grid2"><div class="field"><label for="v-date">Valued on</label><input id="v-date" type="date" value="${todayStr()}"></div></div>
+        <p class="hint">Enter what a dealer would pay for each coin today. Leave one blank if you don't have a value for it; totals count it at cost. Coins you don't change keep their earlier value and date.</p>
+        ${coins.length > 6 ? `<input type="search" id="v-q" placeholder="Filter coins" aria-label="Filter coins" autocomplete="off">` : ""}
+        <div>${coins.map(([cid, c]) => `<div class="rres" data-q="${esc([c.name, c.grade, c.cert, c.grader, c.variety, STATUS[c.status].label].join(" ").toLowerCase())}">
+          <span class="row-main"><span class="row-title">${esc(c.name)}${exTag(c)}</span><span class="row-sub">${esc([gradeLine(c), STATUS[c.status].label, "cost " + fmt(basis(c)), hasWs(c) && c.wholesaleOn ? "valued " + fmtShort(c.wholesaleOn) : ""].filter(Boolean).join(" \u00b7 "))}</span></span>
+          <div class="field"><label for="v-w-${esc(cid)}">Wholesale</label><input id="v-w-${esc(cid)}" type="number" step="0.01" min="0" inputmode="decimal" value="${hasWs(c) ? mv(c.wholesale) : ""}" placeholder="Not valued"></div>
+        </div>`).join("")}</div>
+      </section>
+      <section class="sec"><div class="card stmt" id="v-sum"></div></section>
+    </div>
+    <footer class="sh-foot gut" id="sh-foot"><span class="grow"></span><button type="button" class="btn ghost" data-sh="close">Cancel</button><button type="submit" class="btn primary" id="sh-save">Save values</button></footer>
+  </form>`;
+  const read = f => coins.map(([cid, c]) => { const v = f.querySelector("#v-w-" + CSS.escape(cid)).value.trim(); return [cid, c, v === "" ? "" : num(v)]; });
+  const update = () => {
+    const f = panel.querySelector("#val-form"); if (!f) return;
+    const rows = read(f), cost = sum(rows, r => basis(r[1])), ws = sum(rows, r => r[2] === "" ? basis(r[1]) : r[2]), nv = rows.filter(r => r[2] === "").length;
+    const changed = rows.filter(([, c, v]) => v !== (hasWs(c) ? num(c.wholesale) : "")).length;
+    f.querySelector("#v-sum").innerHTML = `
+      <div class="sl"><span class="lbl">At cost<small>${plural(rows.length, "coin")}</small></span><span class="fig">${fmt(cost)}</span></div>
+      <div class="sl total"><span class="lbl">At wholesale${nv ? `<small>${nv} at cost, not valued</small>` : ""}</span><span class="fig">${fmt(ws)}</span></div>
+      <div class="sl minor"><span class="lbl">Wholesale vs cost</span><span class="fig ${ws - cost < 0 ? "neg" : "pos"}">${fmtSigned(num(ws - cost))}</span></div>`;
+    const b = f.querySelector("#sh-save"); b.textContent = changed ? "Save " + plural(changed, "value") : "Save values"; b.disabled = !changed;
+  };
+  openSheet(html, {
+    what: "values",
+    onInput(e){ if (e.target.id === "v-q"){ const q = e.target.value.trim().toLowerCase(); panel.querySelectorAll("#val-form .rres").forEach(el => { el.hidden = !!q && !el.dataset.q.includes(q); }); } update(); },
+    onChange: update,
+    onSubmit(f){
+      const date = f.querySelector("#v-date").value || todayStr(), now = nowIso();
+      const writes = read(f).filter(([, c, v]) => v !== (hasWs(c) ? num(c.wholesale) : ""))
+        .map(([cid, c, v]) => ["set", "coins", cid, Object.assign({}, c, {wholesale: v, wholesaleOn: v === "" ? "" : date, updated: now})]);
+      if (!writes.length){ closeSheet(); return; }
+      guarded(async () => { await runWrites(writes); closeSheet(); toast("Updated " + plural(writes.length, "wholesale value")); });
+    }
+  }, null);
+  update();
 }
 
 /* mark several in-stock coins listed for sale */
@@ -1973,6 +2057,7 @@ main.addEventListener("click", e => {
     case "collect": openCollect(b.dataset.b || ""); break;
     case "consign": if (needDb()) openConsign(null); break;
     case "list-coins": if (needDb()) openListing(); break;
+    case "values": if (needDb()) openValues(); break;
     case "consign-results": openConsignResults(b.dataset.h || ""); break;
     case "new-sub": if (needDb()) openSub(null); break;
     case "edit-sub": openSub(id); break;
